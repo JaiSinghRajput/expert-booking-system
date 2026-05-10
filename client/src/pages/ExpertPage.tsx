@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { io, type Socket } from 'socket.io-client'
 
@@ -89,13 +89,35 @@ function ExpertPage() {
     }
   }, [expertId])
 
+  const expertIdRef = useRef(expertId)
+  const socketRef = useRef<Socket | null>(null)
+
   useEffect(() => {
+    expertIdRef.current = expertId
+  }, [expertId])
+
+  useEffect(() => {
+    // Set up socket.io connection
     const socket: Socket = io(
       getSocketBaseUrl(),
       {
+        reconnection: true,
+        reconnectionDelay: 1000,
+        reconnectionDelayMax: 5000,
+        reconnectionAttempts: 5,
         transports: ['websocket'],
       }
     )
+
+    socketRef.current = socket
+
+    socket.on('connect', () => {
+      console.log('Socket connected:', socket.id)
+    })
+
+    socket.on('disconnect', () => {
+      console.log('Socket disconnected')
+    })
 
     socket.on(
       'slotBooked',
@@ -104,7 +126,9 @@ function ExpertPage() {
         date: string
         timeSlot: string
       }) => {
-        if (payload.expertId !== expertId) {
+        console.log('Slot booked event received:', payload)
+        
+        if (payload.expertId !== expertIdRef.current) {
           return
         }
 
@@ -112,7 +136,7 @@ function ExpertPage() {
           `Slot updated live for ${payload.date} at ${payload.timeSlot}`
         )
 
-        const data = await fetchExpert(expertId)
+        const data = await fetchExpert(expertIdRef.current)
 
         setExpert(data.expert)
 
@@ -125,7 +149,28 @@ function ExpertPage() {
     return () => {
       socket.disconnect()
     }
-  }, [expertId])
+  }, [])
+
+  // Fallback polling mechanism to handle slot updates if socket.io fails
+  useEffect(() => {
+    const pollInterval = setInterval(async () => {
+      if (!expert) return
+      
+      try {
+        const data = await fetchExpert(expertIdRef.current)
+        
+        // Check if the booked slots count changed
+        if (data.expert.bookedSlots > expert.bookedSlots) {
+          console.log('Booked slots changed via polling, updating expert data')
+          setExpert(data.expert)
+        }
+      } catch (error) {
+        console.error('Error polling for updates:', error)
+      }
+    }, 5000) // Poll every 5 seconds
+
+    return () => clearInterval(pollInterval)
+  }, [expert])
 
   if (loading) {
     return (

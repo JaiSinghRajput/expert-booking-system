@@ -29,7 +29,10 @@ export async function getExpertsService(request: Request) {
 
   return {
     experts: paginatedExperts.map((expert) => {
-      const expertBookings = bookings.filter((booking) => booking.expertId === expert._id)
+      const expertBookings = bookings.filter((booking) => {
+        const bid = (booking.expertId as any)?.toString?.() || String(booking.expertId ?? '')
+        return bid === expert._id
+      })
       const bookedSlots = expertBookings.length
       const totalSlots = expert.availableSlots.reduce((count, day) => count + day.slots.length, 0)
 
@@ -56,12 +59,17 @@ export async function getExpertDetailsService(expertId: string) {
     return null
   }
 
+  const expertBookings = bookings.filter((booking) => {
+    const bid = (booking.expertId as any)?.toString?.() || String(booking.expertId ?? '')
+    return bid === expertId
+  })
+
   return {
     expert: {
       ...expert,
       availability: buildAvailability(expert, bookings),
       totalSlots: expert.availableSlots.reduce((count, day) => count + day.slots.length, 0),
-      bookedSlots: bookings.filter((booking) => booking.expertId === expertId).length,
+      bookedSlots: expertBookings.length,
     },
   }
 }
